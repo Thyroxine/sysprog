@@ -68,7 +68,7 @@ static void *
 allocate_stack_mmap()
 {
 	return mmap(NULL, stack_size, PROT_READ | PROT_WRITE | PROT_EXEC,
-		    MAP_ANON | MAP_PRIVATE, -1, 0);
+		    MAP_PRIVATE, -1, 0);
 }
 
 static void *
