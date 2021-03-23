@@ -171,7 +171,21 @@ void printArray(int A[], int size)
         printf("%d ", A[i]);
     printf("\n");
 }
- 
+
+void printArrayFile(int A[], int size, char* filename)
+{   
+    char* outfile=(char*)malloc((strlen(filename)+1)*sizeof(char));
+    strcpy(outfile,filename);
+    strcat(outfile,".out");
+    printf("Writing array to %s\n",outfile);
+    FILE *out=fopen(outfile,"w");	    
+    int i;
+    for (i = 0; i < size; i++)
+        fprintf(out,"%d ", A[i]);
+    fprintf(out,"\n");
+    fclose(out);
+}
+
 /* Sort file */
 
 static void sortFile(char* filename, int** result, int* result_size)
@@ -198,7 +212,7 @@ static void sortFile(char* filename, int** result, int* result_size)
     memcpy(arr,buffer,arr_size*sizeof(int));
     free(buffer);
     printf("Given array is \n");
-    printArray(arr, arr_size);
+  //  printArray(arr, arr_size);
  
     mergeSort(arr, 0, arr_size - 1);
     *result_size=arr_size;
@@ -207,7 +221,8 @@ static void sortFile(char* filename, int** result, int* result_size)
     memcpy(*result,arr,arr_size*sizeof(int));
     
     printf("\nSorted array is \n");
-    printArray(arr, arr_size);
+  //  printArray(arr, arr_size);
+    printArrayFile(arr, arr_size, filename);
 //    printf("%d\n",*result_size);
 //    printf("%d\n",result);
     free(arr);
@@ -222,67 +237,100 @@ int main(int argc, char* argv[])
 	printf("No files specified!\n");
 	exit(0);
     }
-    
+    int i;
     int** result=(int**)malloc(nfiles*sizeof(int *));
     int* result_size=(int*)malloc(nfiles*sizeof(int));
+    char* coroutine_stack[nfiles];
+    ucontext_t coroutine_context[nfiles];
+    
+    printf("Creating coroutines\n");
+    for(i=0;i<nfiles;i++)
+    {
+	coroutine_stack[i]=allocate_stack(STACK_SIG);
+	if(getcontext(&coroutine_context[i]) == -1) 
+		handle_error("getcontext");
+       	coroutine_context[i].uc_stack.ss_sp=coroutine_stack[i];
+	coroutine_context[i].uc_stack.ss_size = stack_size;
+	coroutine_context[i].uc_link=&uctx_main;
+        /*if (i==0) {
+	   coroutine_context[i].uc_link=&uctx_main;
+	} else {
+           coroutine_context[i].uc_link=&coroutine_context[i-1];
+	}*/
+	makecontext(&coroutine_context[i],sortFile,3, argv[i+1],&result[i],&result_size[i]);
+
+    }	    
     /*for(int i=0;i<nfiles;i++) {
        printf("%d\n",&result[i]);
        sortFile(argv[i+1],&result[i],&result_size[i]);
     }*/
     
     /* First of all, create a stack for each coroutine. */
-	char *func1_stack = allocate_stack(STACK_SIG);
+/*	char *func1_stack = allocate_stack(STACK_SIG);
 	char *func2_stack = allocate_stack(STACK_MPROT);
 
-	/*
+	
 	 * Below is just initialization of coroutine structures.
 	 * They are not started yet. Just created.
 	 */
-	if (getcontext(&uctx_func1) == -1)
-		handle_error("getcontext");
+	//if (getcontext(&uctx_func1) == -1)
+	//	handle_error("getcontext");
 	/*
 	 * Here you specify a stack, allocated earlier. Unique for
 	 * each coroutine.
 	 */
-	uctx_func1.uc_stack.ss_sp = func1_stack;
-	uctx_func1.uc_stack.ss_size = stack_size;
+	//uctx_func1.uc_stack.ss_sp = func1_stack;
+	//uctx_func1.uc_stack.ss_size = stack_size;
 	/*
 	 * Important - here you specify, to which context to
 	 * switch after this coroutine is finished. The code below
 	 * says, that when 'uctx_func1' is finished, it should
 	 * switch to 'uctx_main'.
 	 */
-	uctx_func1.uc_link = &uctx_main;
+	/*uctx_func1.uc_link = &uctx_main;
 	makecontext(&uctx_func1, sortFile, 3, argv[1],&result[0],&result_size[0]);
 
 	if (getcontext(&uctx_func2) == -1)
 		handle_error("getcontext");
 	uctx_func2.uc_stack.ss_sp = func2_stack;
-	uctx_func2.uc_stack.ss_size = stack_size;
+	uctx_func2.uc_stack.ss_size = stack_size;*/
 	/* Successor context is f1(), unless argc > 1. */
-        uctx_func2.uc_link = (argc < 1) ? NULL : &uctx_func1;
-	makecontext(&uctx_func2, sortFile, 3, argv[2],&result[1],&result_size[1]);
+        //uctx_func2.uc_link = (argc < 1) ? NULL : &uctx_func1;
+	//makecontext(&uctx_func2, sortFile, 3, argv[2],&result[1],&result_size[1]); 
 
 	/*
 	 * And here it starts. The first coroutine to start is
 	 * 'uctx_func2'.
 	 */
-	printf("main: swapcontext(&uctx_main, &uctx_func2)\n");
-	if (swapcontext(&uctx_main, &uctx_func2) == -1)
-		handle_error("swapcontext");
-
-	printf("main: exiting\n");
-	return 0;
+	//printf("main: swapcontext(&uctx_main, &uctx_func2)\n");
+	for(i=nfiles;i>=0;i--)
+	{  
+	   
+	   
+	   if(i == nfiles) {
+              printf("main: swapcontext(main, %s)\n", argv[i]); 
+	      if (swapcontext(&uctx_main, &coroutine_context[i-1]) == -1)
+		    handle_error("swapcontext");
+	   } else if(i == 0) { 
+              printf("main: swapcontext(%s, main)\n", argv[i+1]); 
+	      if (swapcontext(&coroutine_context[i], &uctx_main) == -1)
+                    handle_error("swapcontext");
+	   } else { 
+              printf("main: swapcontext(%s, %s)\n", argv[i+1],argv[i]); 
+              if (swapcontext(&coroutine_context[i],&coroutine_context[i-1]) == -1) 
+		   handle_error("swapcontext");
+	   }
+        } 
     
     
     
-/*    printf("Sorting merged file\n");
+    printf("Sorting merged file\n");
     int full_arr_size=0;
     for(int i=0;i<nfiles;i++) {
        full_arr_size+=result_size[i];
-//       printf("%d\n",result_size[i]);
-//       printf("%d\n",&result[i]);
-//       printArray(result[i], result_size[i]);   
+    //   printf("%d\n",result_size[i]);
+    //   printf("%d\n",&result[i]);
+    //   printArray(result[i], result_size[i]);   
     }
     
     int* full_arr=(int*)malloc(full_arr_size*sizeof(int));
@@ -296,12 +344,14 @@ int main(int argc, char* argv[])
     free(result_size);
     
     printf("Given array is \n");
-    printArray(full_arr, full_arr_size);
+   // printArray(full_arr, full_arr_size);
  
     mergeSort(full_arr, 0, full_arr_size - 1);
     
     printf("\nSorted array is \n");
-    printArray(full_arr, full_arr_size); 
+    //printArray(full_arr, full_arr_size); 
+    printArrayFile(full_arr, full_arr_size, "result_full"); 
     free(full_arr);
-    return 0;*/
+    printf("main: exiting\n");
+    return 0;
 }
