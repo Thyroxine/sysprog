@@ -176,6 +176,7 @@ void printArray(int A[], int size)
 
 static void sortFile(char* filename, int** result, int* result_size)
 {
+    printf("Sorting file %s:\n",filename);
     FILE *file = fopen(filename,"r");
     int buffer_size = MAX_FILE_SIZE;
     int* buffer =(int*)malloc(buffer_size * sizeof(int));
@@ -207,8 +208,8 @@ static void sortFile(char* filename, int** result, int* result_size)
     
     printf("\nSorted array is \n");
     printArray(arr, arr_size);
-    printf("%d\n",*result_size);
-    printf("%d\n",result);
+//    printf("%d\n",*result_size);
+//    printf("%d\n",result);
     free(arr);
 }
  
@@ -225,7 +226,6 @@ int main(int argc, char* argv[])
     int** result=(int**)malloc(nfiles*sizeof(int *));
     int* result_size=(int*)malloc(nfiles*sizeof(int));
     /*for(int i=0;i<nfiles;i++) {
-       printf("Sorting file %s:\n",argv[i+1]);
        printf("%d\n",&result[i]);
        sortFile(argv[i+1],&result[i],&result_size[i]);
     }*/
@@ -260,7 +260,7 @@ int main(int argc, char* argv[])
 	uctx_func2.uc_stack.ss_sp = func2_stack;
 	uctx_func2.uc_stack.ss_size = stack_size;
 	/* Successor context is f1(), unless argc > 1. */
-	uctx_func2.uc_link = (argc > 1) ? NULL : &uctx_func1;
+        uctx_func2.uc_link = (argc < 1) ? NULL : &uctx_func1;
 	makecontext(&uctx_func2, sortFile, 3, argv[2],&result[1],&result_size[1]);
 
 	/*
