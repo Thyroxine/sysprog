@@ -295,9 +295,10 @@ int main(int argc, char* argv[])
     struct timeval main_start, main_end, main_spent;
     gettimeofday(&main_start, NULL);
     nfiles=argc-2;
-    if (nfiles<1) {
-	printf("No files specified!\n");
-	exit(0);
+    if (nfiles<1)
+    {
+	    printf("No files specified!\n");
+	    exit(0);
     }	
     delay=strtod(argv[1],NULL)/(double)nfiles;
     printf("Specified coroutine latency is %lf\n", delay);
@@ -321,13 +322,14 @@ int main(int argc, char* argv[])
 	if(getcontext(&coroutine_context[i]) == -1) 
 		handle_error("getcontext");
        	coroutine_context[i].uc_stack.ss_sp=coroutine_stack[i];
-	coroutine_context[i].uc_stack.ss_size = stack_size;
+	    coroutine_context[i].uc_stack.ss_size = stack_size;
 	//coroutine_context[i].uc_link=&uctx_main;
-        if (i==0) {
-	   coroutine_context[i].uc_link=&uctx_main;
-	} else {
+        if (i==0)
+        {
+            coroutine_context[i].uc_link=&uctx_main;
+	    } else {
            coroutine_context[i].uc_link=&coroutine_context[i-1];
-	}
+	    }
 	makecontext(&coroutine_context[i],sort_file,4, argv[i+2], i,&result[i],&result_size[i]);
 
     }	    
@@ -340,7 +342,8 @@ int main(int argc, char* argv[])
 	{
 		all_finished=1;
 		for(i=0;i<nfiles;i++)	
-			if(!finished[i]){
+			if(!finished[i])
+			{
 			printf("Coroutine with context %d not finished, switching to it\n", i);
 				all_finished=0;
 				if (swapcontext(&uctx_main, &coroutine_context[i]) == -1)
@@ -395,6 +398,11 @@ int main(int argc, char* argv[])
     //printArray(full_arr, full_arr_size); 
     printArrayFile(full_arr, full_arr_size, "result_full"); 
     free(full_arr);
+    free(finished);
+    free(times);
+    free(wall_times);
+    free(coroutine_stack);
+    free(coroutine_context);
     gettimeofday(&main_end, NULL);
     timersub(&main_end, &main_start, &main_spent);
     double time_ms = 1000.0*main_spent.tv_sec + (1.0/1000.0) * main_spent.tv_usec;
