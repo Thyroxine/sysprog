@@ -279,7 +279,7 @@ int main(int argc, char* argv[])
     if (nfiles<1)
     {
 	    printf("No files specified!\n");
-	    printf("Usage: <target latency> <file 1> <file 2> ... <file N>\n");
+	    printf("Usage: %s <target latency> <file 1> <file 2> ... <file N>\n",argv[0]);
 	    exit(0);
     }	
     delay=strtod(argv[1],NULL);
