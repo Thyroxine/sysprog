@@ -16,7 +16,8 @@ static ucontext_t* coroutine_context;
 static struct timeval* times;
 static struct timeval* wall_times;
 static double delay;
-static int* finished;
+static int *finished;
+static int *num_swaps;
 
 #define handle_error(msg) \
    do { perror(msg); exit(EXIT_FAILURE); } while (0)
@@ -27,9 +28,9 @@ static double measure_wall_time(int id) {
        struct timeval tval_now, tval_spent;
 	gettimeofday(&tval_now, NULL);
 	timersub(&tval_now, &wall_times[id], &tval_spent);
-	double time_ms = 1000.0*tval_spent.tv_sec + (1.0/1000.0) * tval_spent.tv_usec;
-	printf("Context %d Wall Time elapsed: %lf ms\n", id, time_ms);
-	return time_ms;
+	double time_us = 1000000.0*tval_spent.tv_sec + tval_spent.tv_usec;
+	printf("Context %d Wall Time elapsed: %.1lf microseconds\n", id, time_us);
+	return time_us;
 } 
 
 static void execute_swap_coroutines(int i)
@@ -37,13 +38,15 @@ static void execute_swap_coroutines(int i)
     //If coroutine with last id
      if(i >= nfiles-1) {
            if(!finished[0]){
-              printf("swapcontext(%d, %d)\n", nfiles-1, 0); 
+               num_swaps[i]++;
+           //   printf("swapcontext(%d, %d)\n", nfiles-1, 0);
               if (swapcontext(&coroutine_context[nfiles-1], &coroutine_context[0]) == -1)
 		    handle_error("swapcontext");
 	    }
 	   } else { 
 	      if(!finished[i+1]){
-              printf("swapcontext(%d, %d)\n", i, i+1);  
+              num_swaps[i]++;
+            //  printf("swapcontext(%d, %d)\n", i, i+1);
               if (swapcontext(&coroutine_context[i],&coroutine_context[i+1]) == -1) 
 		   handle_error("swapcontext");
 	      }
@@ -54,9 +57,9 @@ static void swap_coroutines(int id) {
 	struct timeval tval_now, tval_spent;
 	gettimeofday(&tval_now, NULL);
 	timersub(&tval_now, &times[id], &tval_spent);
-	double time_ms = 1000.0*tval_spent.tv_sec + (1.0/1000.0) * tval_spent.tv_usec;
-	printf("Context %d Time elapsed: %lf ms\n", id, time_ms);
-	if (time_ms > delay) {
+    double time_us = 1000000.0*tval_spent.tv_sec + tval_spent.tv_usec;
+	//printf("Context %d Time elapsed: %lf microseconds\n", id, time_us);
+	if (time_us > delay) {
 		execute_swap_coroutines(id);
 		memcpy(&times[id],&tval_now,sizeof(tval_now));
 	}
@@ -215,7 +218,7 @@ void print_array_tofile(int A[], int size, char* filename)
 /* Sort file */
 
 static void sort_file(char* filename, int id, int** result, int* result_size)
-{   
+{
     finished[id]=0;
     gettimeofday(&wall_times[id], NULL);
     memcpy(&times[id],&wall_times[id],sizeof(wall_times[id]));
@@ -265,6 +268,7 @@ static void sort_file(char* filename, int id, int** result, int* result_size)
     free(arr);
     measure_wall_time(id);
     printf("exiting coroutine with context id: %d\n",id);
+    num_swaps[id]++;
     finished[id]=1;
     coroutine_context[id].uc_link=&uctx_main;
     if (swapcontext(&coroutine_context[id], &uctx_main) == -1)
@@ -283,16 +287,16 @@ int main(int argc, char* argv[])
 	    exit(0);
     }	
     delay=strtod(argv[1],NULL);
-    printf("Target latency is %lf\n", delay);
+    printf("Target latency is %lf microseconds\n", delay);
     delay=delay/(double)nfiles;
-    printf("Specified coroutine latency is %lf\n", delay);
+    printf("Specified coroutine latency is %lf microseconds\n", delay);
 
     int i;
     int** result=(int**)malloc(nfiles*sizeof(int *));
     int* result_size=(int*)malloc(nfiles*sizeof(int));
     
-    finished=(int*)malloc(nfiles*sizeof(int*));
-    
+    finished=(int*)calloc(nfiles,sizeof(int));
+    num_swaps=(int*)calloc((nfiles+1),sizeof(int));
     times=(struct timeval*)malloc(nfiles*sizeof(struct timeval));
     wall_times=(struct timeval*)malloc(nfiles*sizeof(struct timeval));
     
@@ -317,6 +321,7 @@ int main(int argc, char* argv[])
 
     }	    
     printf("Starting coroutines\n");
+    num_swaps[nfiles]++;
 	if (swapcontext(&uctx_main, &coroutine_context[0]) == -1)
 		    handle_error("swapcontext"); 
 		    
@@ -329,13 +334,20 @@ int main(int argc, char* argv[])
 			{
 			printf("Coroutine with context %d not finished, switching to it\n", i);
 				all_finished=0;
+				num_swaps[nfiles]++;
 				if (swapcontext(&uctx_main, &coroutine_context[i]) == -1)
 		    		handle_error("swapcontext");
 		    } 
 	} while (!all_finished);
 	if (all_finished) 
 	    printf ("All coroutines finished! \n");
-
+    printf("Total swaps:\n");
+    for(int i=0;i<=nfiles;i++) {
+        if(i<nfiles)
+            printf("Coroutine with context id %d: %d\n",i, num_swaps[i]);
+        else
+            printf("Main: %d\n", num_swaps[i]);
+    }
 	/*for(i=nfiles;i>=0;i--)
 	{
 	   if(i == nfiles) {
@@ -352,6 +364,7 @@ int main(int argc, char* argv[])
 		   handle_error("swapcontext");
 	   }
         } */
+
 
     printf("Sorting merged file\n");
     int full_arr_size=0;
@@ -378,6 +391,7 @@ int main(int argc, char* argv[])
     //print_array(full_arr, full_arr_size); 
     print_array_tofile(full_arr, full_arr_size, "result_full.txt");
     free(full_arr);
+    free(num_swaps);
     free(finished);
     free(times);
     free(wall_times);
@@ -385,8 +399,8 @@ int main(int argc, char* argv[])
     free(coroutine_context);
     gettimeofday(&main_end, NULL);
     timersub(&main_end, &main_start, &main_spent);
-    double time_ms = 1000.0*main_spent.tv_sec + (1.0/1000.0) * main_spent.tv_usec;
-    printf("Wall Time elapsed: %lf ms\n", time_ms);
+    double time_us = 1000000.0*main_spent.tv_sec + main_spent.tv_usec;
+    printf("Wall Time elapsed: %.1lf microseconds\n", time_us);
     printf("main: exiting\n");
     return 0;
 }
