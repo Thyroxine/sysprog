@@ -6,9 +6,9 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 
-#define MAX_FILE_SIZE 1024
+#define DEFAULT_FILE_SIZE 1024
 
-static ucontext_t uctx_main, uctx_func1, uctx_func2;
+static ucontext_t uctx_main;
 
 static char** coroutine_stack;
 static int nfiles;
@@ -23,13 +23,6 @@ static int* finished;
 
 #define stack_size 1024 * 1024
 
-/**
- * Coroutine body. This code is executed by all the corutines at
- * the same time and with different stacks. So you can store any
- * local variables and arguments right here. Here you implement
- * your solution.
- */
-
 static double measure_wall_time(int id) {
        struct timeval tval_now, tval_spent;
 	gettimeofday(&tval_now, NULL);
@@ -41,6 +34,7 @@ static double measure_wall_time(int id) {
 
 static void execute_swap_coroutines(int i)
 {
+    //If coroutine with last id
      if(i >= nfiles-1) {
            if(!finished[0]){
               printf("swapcontext(%d, %d)\n", nfiles-1, 0); 
@@ -67,9 +61,6 @@ static void swap_coroutines(int id) {
 		memcpy(&times[id],&tval_now,sizeof(tval_now));
 	}
 }
-
-
-
 
 /**
  * Below you can see 3 different ways of how to allocate stack.
@@ -125,7 +116,6 @@ allocate_stack(enum stack_type t)
 		return allocate_stack_mprot();
 	}
 }
-
 
 // Merges two subarrays of arr[].
 // First subarray is arr[l..m]
@@ -195,9 +185,8 @@ void mergeSort(int arr[], int l, int r)
     }
 }
  
-/* UTILITY FUNCTIONS */
 /* Function to print an array */
-void printArray(int A[], int size)
+void print_array(int A[], int size)
 {
     int i;
     for (i = 0; i < size; i++)
@@ -205,12 +194,12 @@ void printArray(int A[], int size)
     printf("\n");
 }
 
-void printArrayFile(int A[], int size, char* filename)
+void print_array_tofile(int A[], int size, char* filename)
 {   
     char* outfile=(char*)malloc((strlen(filename)+1)*sizeof(char));
     strcpy(outfile,filename);
     strcat(outfile,".out");
-    printf("Writing array to %s\n",outfile);
+    printf("Writing sorted array to %s\n",outfile);
     FILE *out=fopen(outfile,"w");
     if (out == NULL) {
     	fprintf(stderr, "Failed to open file %s for writing\n", outfile);
@@ -222,7 +211,7 @@ void printArrayFile(int A[], int size, char* filename)
     fprintf(out,"\n");
     fclose(out);
 }
-
+/* This is coroutine body */
 /* Sort file */
 
 static void sort_file(char* filename, int id, int** result, int* result_size)
@@ -231,7 +220,7 @@ static void sort_file(char* filename, int id, int** result, int* result_size)
     gettimeofday(&wall_times[id], NULL);
     memcpy(&times[id],&wall_times[id],sizeof(wall_times[id]));
     printf("Sorting file %s: with context id: %d\n",filename, id);
-    int buffer_size = MAX_FILE_SIZE;
+    int buffer_size = DEFAULT_FILE_SIZE;
     int* buffer =(int*)malloc(buffer_size * sizeof(int));
     swap_coroutines(id);
     FILE *file = fopen(filename,"r");
@@ -260,7 +249,7 @@ static void sort_file(char* filename, int id, int** result, int* result_size)
     free(buffer);
     swap_coroutines(id);
   //  printf("Given array is \n");
-  //  printArray(arr, arr_size);
+  //  print_array(arr, arr_size);
     printf("Executing merge sorting of file %s\n",filename);
     mergeSort(arr, 0, arr_size - 1);
     swap_coroutines(id);
@@ -270,14 +259,11 @@ static void sort_file(char* filename, int id, int** result, int* result_size)
     memcpy(*result,arr,arr_size*sizeof(int));
     swap_coroutines(id);
    // printf("\nSorted array is \n");
-  //  printArray(arr, arr_size);
-    printArrayFile(arr, arr_size, filename);
+  //  print_array(arr, arr_size);
+    print_array_tofile(arr, arr_size, filename);
     swap_coroutines(id);
-//    printf("%d\n",*result_size);
-//    printf("%d\n",result);
     free(arr);
     measure_wall_time(id);
- //   times[id].tv_sec=10000.0;
     printf("exiting coroutine with context id: %d\n",id);
     finished[id]=1;
     coroutine_context[id].uc_link=&uctx_main;
@@ -285,11 +271,6 @@ static void sort_file(char* filename, int id, int** result, int* result_size)
 		    		handle_error("swapcontext");
 }
 
-
-
-
-
-/* Driver code */
 int main(int argc, char* argv[])
 {
     struct timeval main_start, main_end, main_spent;
@@ -298,11 +279,14 @@ int main(int argc, char* argv[])
     if (nfiles<1)
     {
 	    printf("No files specified!\n");
+	    printf("Usage: <target latency> <file 1> <file 2> ... <file N>\n");
 	    exit(0);
     }	
-    delay=strtod(argv[1],NULL)/(double)nfiles;
+    delay=strtod(argv[1],NULL);
+    printf("Target latency is %lf\n", delay);
+    delay=delay/(double)nfiles;
     printf("Specified coroutine latency is %lf\n", delay);
-    
+
     int i;
     int** result=(int**)malloc(nfiles*sizeof(int *));
     int* result_size=(int*)malloc(nfiles*sizeof(int));
@@ -323,7 +307,6 @@ int main(int argc, char* argv[])
 		handle_error("getcontext");
        	coroutine_context[i].uc_stack.ss_sp=coroutine_stack[i];
 	    coroutine_context[i].uc_stack.ss_size = stack_size;
-	//coroutine_context[i].uc_link=&uctx_main;
         if (i==0)
         {
             coroutine_context[i].uc_link=&uctx_main;
@@ -333,7 +316,7 @@ int main(int argc, char* argv[])
 	makecontext(&coroutine_context[i],sort_file,4, argv[i+2], i,&result[i],&result_size[i]);
 
     }	    
-    printf("Starting coroutines!\n");
+    printf("Starting coroutines\n");
 	if (swapcontext(&uctx_main, &coroutine_context[0]) == -1)
 		    handle_error("swapcontext"); 
 		    
@@ -352,12 +335,9 @@ int main(int argc, char* argv[])
 	} while (!all_finished);
 	if (all_finished) 
 	    printf ("All coroutines finished! \n");
-	
-	//printf("main: swapcontext(&uctx_main, &uctx_func2)\n");
+
 	/*for(i=nfiles;i>=0;i--)
-	{  
-	  
-	   
+	{
 	   if(i == nfiles) {
               printf("main: swapcontext(main, %s)\n", argv[i]); 
 	      if (swapcontext(&uctx_main, &coroutine_context[i-1]) == -1)
@@ -390,13 +370,13 @@ int main(int argc, char* argv[])
     free(result_size);
     
     //printf("Given array is \n");
-   // printArray(full_arr, full_arr_size);
+   // print_array(full_arr, full_arr_size);
  
     mergeSort(full_arr, 0, full_arr_size - 1);
     
     //printf("\nSorted array is \n");
-    //printArray(full_arr, full_arr_size); 
-    printArrayFile(full_arr, full_arr_size, "result_full"); 
+    //print_array(full_arr, full_arr_size); 
+    print_array_tofile(full_arr, full_arr_size, "result_full.txt");
     free(full_arr);
     free(finished);
     free(times);
