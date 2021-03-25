@@ -71,7 +71,7 @@ static void swap_coroutines(int id) {
  */
 
 static void *
-allocate_stack_sig()
+allocate_stack()
 {
 	void *stack = malloc(stack_size);
 	stack_t ss;
@@ -82,44 +82,11 @@ allocate_stack_sig()
 	return stack;
 }
 
-static void *
-allocate_stack_mmap()
+static void
+deallocate_stack(void *stack)
 {
-	return mmap(NULL, stack_size, PROT_READ | PROT_WRITE | PROT_EXEC,
-		    MAP_PRIVATE, -1, 0);
+	free(stack);
 }
-
-static void *
-allocate_stack_mprot()
-{
-	void *stack = malloc(stack_size);
-	mprotect(stack, stack_size, PROT_READ | PROT_WRITE | PROT_EXEC);
-	return stack;
-}
-
-enum stack_type {
-	STACK_MMAP,
-	STACK_SIG,
-	STACK_MPROT
-};
-
-/**
- * Use this wrapper to choose your favourite way of stack
- * allocation.
- */
-static void *
-allocate_stack(enum stack_type t)
-{
-	switch(t) {
-	case STACK_MMAP:
-		return allocate_stack_mmap();
-	case STACK_SIG:
-		return allocate_stack_sig();
-	case STACK_MPROT:
-		return allocate_stack_mprot();
-	}
-}
-
 // Merges two subarrays of arr[].
 // First subarray is arr[l..m]
 // Second subarray is arr[m+1..r]
@@ -199,7 +166,7 @@ void print_array(int A[], int size)
 
 void print_array_tofile(int A[], int size, char* filename)
 {   
-    char* outfile=(char*)malloc((strlen(filename)+1)*sizeof(char));
+    char* outfile=(char*)malloc((strlen(filename)*2)*sizeof(char));
     strcpy(outfile,filename);
     strcat(outfile,".out");
     printf("Writing sorted array to %s\n",outfile);
@@ -213,6 +180,7 @@ void print_array_tofile(int A[], int size, char* filename)
         fprintf(out,"%d ", A[i]);
     fprintf(out,"\n");
     fclose(out);
+    free(outfile);
 }
 /* This is coroutine body */
 /* Sort file */
@@ -306,7 +274,7 @@ int main(int argc, char* argv[])
     printf("Creating coroutines\n");
     for(i=0;i<nfiles;i++)
     {
-	coroutine_stack[i]=allocate_stack(STACK_SIG);
+	coroutine_stack[i]=allocate_stack();
 	if(getcontext(&coroutine_context[i]) == -1) 
 		handle_error("getcontext");
        	coroutine_context[i].uc_stack.ss_sp=coroutine_stack[i];
@@ -390,6 +358,8 @@ int main(int argc, char* argv[])
     //printf("\nSorted array is \n");
     //print_array(full_arr, full_arr_size); 
     print_array_tofile(full_arr, full_arr_size, "result_full.txt");
+    for(i=0;i<nfiles;i++)
+    	deallocate_stack(coroutine_stack[i]);
     free(full_arr);
     free(num_swaps);
     free(finished);
