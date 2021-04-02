@@ -232,7 +232,7 @@ static void sort_file(char* filename, int id, int** result, int* result_size)
    // printf("\nSorted array is \n");
   //  print_array(arr, arr_size);
     print_array_tofile(arr, arr_size, filename);
-    swap_coroutines(id);
+//    swap_coroutines(id);
     free(arr);
     measure_wall_time(id);
     printf("exiting coroutine with context id: %d\n",id);
